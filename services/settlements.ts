@@ -41,11 +41,28 @@ export const buildOutstandingTransactions = (
     outstanding.set(key, remaining > 0.009 ? remaining : 0);
   });
 
-  return Array.from(outstanding.entries())
-    .map(([key, amount]) => {
-      const [from, to] = key.split('__');
-      return { from, to, amount } as TransactionSuggestion;
-    })
-    .filter(txn => txn.amount > 0.009)
-    .sort((a, b) => b.amount - a.amount);
+  // Net opposite directions so A->B and B->A collapse to a single direction
+  const pairTotals = new Map<string, number>();
+  outstanding.forEach((amount, key) => {
+    if (amount <= 0.009) return;
+    const [from, to] = key.split('__');
+    const lower = from < to ? from : to;
+    const higher = from < to ? to : from;
+    const pairKey = `${lower}__${higher}`;
+    const delta = from === lower ? amount : -amount;
+    pairTotals.set(pairKey, (pairTotals.get(pairKey) || 0) + delta);
+  });
+
+  const netted: TransactionSuggestion[] = [];
+  pairTotals.forEach((total, key) => {
+    if (Math.abs(total) <= 0.009) return;
+    const [a, b] = key.split('__');
+    if (total > 0) {
+      netted.push({ from: a, to: b, amount: total });
+    } else {
+      netted.push({ from: b, to: a, amount: Math.abs(total) });
+    }
+  });
+
+  return netted.sort((a, b) => b.amount - a.amount);
 };
